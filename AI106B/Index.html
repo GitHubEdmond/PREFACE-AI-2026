@@ -1,0 +1,677 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <title>Smart Packing List Generator - AI106B</title>
+
+  <!-- TailwindCSS via CDN (utility "module" classes for styling) -->
+  <script src="https://cdn.tailwindcss.com"></script>
+
+  <!-- Tailwind config: here we can easily tweak colors / sizes if needed -->
+  <script>
+    // This config lets us define custom colors/sizes once and then use them in the HTML classes
+    tailwind.config = {
+      theme: {
+        extend: {
+          colors: {
+            // Custom brand colors for buttons / highlights
+            brandPrimary: '#2563eb',   // blue-600
+            brandPrimaryDark: '#1d4ed8',
+            brandAccent: '#f97316',    // orange-500
+          },
+          boxShadow: {
+            card: '0 10px 25px rgba(0,0,0,0.06)',
+          },
+        },
+      },
+    };
+  </script>
+
+  <style>
+    /* 
+      Although Tailwind is utility-based, we can still define small custom classes
+      to group common styles, which keeps our HTML slightly cleaner.
+    */
+
+    /* Panel base style (used for both form and list panels) */
+    .panel {
+      @apply bg-white rounded-xl shadow-card p-6 md:p-8;
+    }
+
+    /* Compact label text style */
+    .form-label {
+      @apply block text-sm font-medium text-gray-700 mb-1;
+    }
+
+    /* Input base style */
+    .form-input-base {
+      @apply w-full rounded-md border border-gray-300 px-3 py-2 text-sm
+             focus:outline-none focus:ring-2 focus:ring-brandPrimary focus:border-transparent;
+    }
+
+    /* Primary button style - easy to adjust color/size here */
+    .btn-primary {
+      @apply inline-flex items-center justify-center
+             rounded-md bg-brandPrimary text-white text-sm font-semibold
+             px-4 py-2 shadow-sm hover:bg-brandPrimaryDark transition;
+    }
+
+    /* Secondary button style */
+    .btn-secondary {
+      @apply inline-flex items-center justify-center
+             rounded-md bg-gray-100 text-gray-800 text-sm font-semibold
+             px-4 py-2 shadow-sm hover:bg-gray-200 transition;
+    }
+
+    /* Small badge label */
+    .badge {
+      @apply inline-flex items-center rounded-full bg-gray-100 px-3 py-1 text-xs font-medium text-gray-600;
+    }
+  </style>
+</head>
+<body class="min-h-screen bg-gradient-to-br from-slate-100 to-slate-200 text-gray-900">
+
+  <!--
+    MAIN LAYOUT
+    - A centered container
+    - Left: compact form section
+    - Right: packing list + progress
+  -->
+  <div id="app-root" class="max-w-6xl mx-auto py-8 px-4 md:py-12">
+    <!-- Header -->
+    <header class="mb-6 md:mb-8 text-center">
+      <h1 id="app-title" class="text-2xl md:text-3xl font-bold text-gray-800 mb-2">
+        Smart Packing List Generator
+      </h1>
+      <p class="text-sm md:text-base text-gray-600">
+        Enter your destination, pick the weather, and let the tool create a tailored packing checklist.
+      </p>
+    </header>
+
+    <!-- MAIN GRID: FORM (LEFT) + PACKING LIST (RIGHT) -->
+    <!-- 
+      NOTE: The grid column classes (md:grid-cols-[1.1fr,1.4fr]) control panel sizes.
+      You can change these to resize panels (e.g. make form wider or narrower).
+    -->
+    <main class="grid gap-6 md:grid-cols-[1.1fr,1.4fr]">
+      <!-- ================= PART 1: FORM SECTION ================= -->
+      <section id="controls-panel" class="panel space-y-4">
+        <div class="flex items-center justify-between mb-2">
+          <h2 id="controls-title" class="text-lg font-semibold text-gray-800">
+            Trip Details
+          </h2>
+          <span class="badge">
+            Step 1: Configure
+          </span>
+        </div>
+
+        <!-- DESTINATION INPUT -->
+        <div class="space-y-1">
+          <label for="destination-input" class="form-label">
+            Destination city
+          </label>
+          <input
+            id="destination-input"
+            class="form-input-base"
+            type="text"
+            placeholder="e.g. London, Bangkok, Tokyo"
+          />
+        </div>
+
+        <!-- WEATHER DROPDOWN -->
+        <div class="space-y-1">
+          <label for="weather-select" class="form-label">
+            Expected weather
+          </label>
+          <select
+            id="weather-select"
+            class="form-input-base"
+          >
+            <!-- 
+              Values are mapped to internal "weather categories" in JavaScript.
+              These IDs and values are used later in generatePackingList().
+            -->
+            <option value="hot">Sunny / Hot</option>
+            <option value="cold">Cold</option>
+            <option value="rainy">Rainy</option>
+            <option value="mixed">Mixed / Variable</option>
+          </select>
+        </div>
+
+        <!-- TRIP DURATION SLIDER -->
+        <div class="space-y-2">
+          <label for="duration-slider" class="form-label">
+            Trip duration (days)
+          </label>
+          <div class="flex items-center gap-3">
+            <!-- 
+              Range slider from 1 to 14 days.
+              JavaScript reads its value to adjust the packing list.
+            -->
+            <input
+              id="duration-slider"
+              class="flex-1"
+              type="range"
+              min="1"
+              max="14"
+              step="1"
+              value="5"
+            />
+            <span
+              id="duration-display"
+              class="text-sm font-semibold text-gray-700 w-10 text-right"
+            >
+              5
+            </span>
+          </div>
+          <p class="text-xs text-gray-500">
+            Longer trips automatically add more toiletries.
+          </p>
+        </div>
+
+        <!-- BUTTONS ROW -->
+        <div class="mt-4 flex flex-wrap gap-3">
+          <!-- Generate Packing List -->
+          <button
+            id="generate-btn"
+            class="btn-primary"
+            type="button"
+          >
+            Generate Packing List
+          </button>
+
+          <!-- Get Weather (API-based suggestion) -->
+          <button
+            id="get-weather-btn"
+            class="btn-secondary"
+            type="button"
+          >
+            Get Weather
+          </button>
+
+          <!-- Reset Button -->
+          <button
+            id="reset-btn"
+            class="btn-secondary"
+            type="button"
+          >
+            Reset
+          </button>
+        </div>
+
+        <!-- WEATHER STATUS / MESSAGES -->
+        <div id="weather-status" class="mt-3 text-xs text-gray-600 min-h-[1.5rem]">
+          <!-- JavaScript writes API status / result / errors here -->
+        </div>
+      </section>
+
+      <!-- ================= PART 1: DISPLAY CARD / CHECKLIST ================= -->
+      <section id="list-panel" class="panel flex flex-col">
+        <div class="flex items-center justify-between mb-2">
+          <h2 id="packing-list-title" class="text-lg font-semibold text-gray-800">
+            Packing Checklist
+          </h2>
+
+          <!-- PROGRESS COUNTER -->
+          <!-- JavaScript updates this text based on packed items -->
+          <div id="progress-counter" class="badge">
+            0/0 items packed
+          </div>
+        </div>
+
+        <!-- Packing list container: checkboxes are dynamically injected here -->
+        <div
+          id="packing-list-container"
+          class="mt-2 space-y-2 max-h-80 overflow-y-auto border border-dashed border-gray-200 rounded-md p-3 text-sm"
+        >
+          <!-- 
+            Initially empty. After clicking "Generate Packing List",
+            JavaScript will populate this with categorized checkboxes.
+          -->
+          <p class="text-xs text-gray-400 italic">
+            Your generated packing checklist will appear here.
+          </p>
+        </div>
+
+        <!-- Celebration message for when all items are packed -->
+        <div
+          id="celebration-message"
+          class="mt-3 hidden text-sm font-semibold text-brandAccent"
+        >
+          🎉 All items packed! Have an amazing trip!
+        </div>
+      </section>
+    </main>
+  </div>
+
+  <!-- ============================= PART 2: PURE LOGIC (NO DOM) ============================= -->
+  <script>
+    /*
+      This script block only contains "pure" JavaScript logic:
+      - Data (packing items by category)
+      - Functions that operate on inputs/outputs (no DOM access)
+      This makes them easy to test or re-use elsewhere.
+    */
+
+    // 1. PACKING ITEM DATA (by category)
+    //    These arrays define the base items used to build the checklist.
+    const packingItems = {
+      hot: ["swimsuit", "sunscreen", "sunglasses", "hat", "light clothes"],
+      cold: ["jacket", "scarf", "gloves", "thermal wear", "beanie"],
+      rainy: ["umbrella", "raincoat", "waterproof shoes", "plastic bag"],
+      toiletries: ["toothbrush", "toothpaste", "shampoo", "deodorant"],
+      electronics: ["phone", "charger", "power bank", "headphones"],
+      documents: ["passport", "id card", "boarding pass", "cash/card"],
+    };
+
+    /**
+     * 2. generatePackingList(weather, days)
+     * -------------------------------------
+     * - Input:
+     *     weather: "hot" | "cold" | "rainy" | "mixed"
+     *     days: number (trip length)
+     * - Output:
+     *     Array of objects: { item: string, category: string, packed: boolean }
+     *
+     * Logic:
+     *  - Include weather-specific clothing items based on the chosen weather.
+     *  - Always add toiletries; if days > 7, duplicate toiletries to represent extra quantity.
+     *  - Always add electronics and documents.
+     */
+    function generatePackingList(weather, days) {
+      const list = [];
+
+      // Helper to push items from a given array into the list with a category label
+      function addCategoryItems(itemsArray, categoryLabel) {
+        itemsArray.forEach((item) => {
+          list.push({
+            item,                  // the item name, e.g. "jacket"
+            category: categoryLabel, // high-level category, e.g. "clothing" or "toiletries"
+            packed: false,         // default: not packed yet
+          });
+        });
+      }
+
+      // 2.1 Add weather-specific items
+      // Map weather type to relevant base arrays and categories
+      if (weather === "hot") {
+        addCategoryItems(packingItems.hot, "clothing - hot");
+      } else if (weather === "cold") {
+        addCategoryItems(packingItems.cold, "clothing - cold");
+      } else if (weather === "rainy") {
+        addCategoryItems(packingItems.rainy, "clothing - rainy");
+      } else if (weather === "mixed") {
+        // "mixed" = combination of hot + cold + rainy
+        addCategoryItems(packingItems.hot, "clothing - hot");
+        addCategoryItems(packingItems.cold, "clothing - cold");
+        addCategoryItems(packingItems.rainy, "clothing - rainy");
+      }
+
+      // 2.2 Always add toiletries
+      addCategoryItems(packingItems.toiletries, "toiletries");
+
+      // If the trip is longer than 7 days, add a second set of toiletries (more quantity)
+      if (days > 7) {
+        // We append the same items again, but annotate them as "extra"
+        packingItems.toiletries.forEach((item) => {
+          list.push({
+            item: item + " (extra)", // e.g. "shampoo (extra)"
+            category: "toiletries - extra",
+            packed: false,
+          });
+        });
+      }
+
+      // 2.3 Always add electronics and documents
+      addCategoryItems(packingItems.electronics, "electronics");
+      addCategoryItems(packingItems.documents, "documents");
+
+      return list;
+    }
+
+    /**
+     * 3. calculateProgress(packingList)
+     * ---------------------------------
+     * - Input:
+     *     packingList: array of { item, category, packed }
+     * - Output:
+     *     { packed: number, total: number, percentage: number }
+     *
+     * It counts how many items have packed === true and computes a percentage.
+     */
+    function calculateProgress(packingList) {
+      const total = packingList.length; // total number of checklist items
+      const packed = packingList.filter((entry) => entry.packed).length; // how many are packed
+      const percentage = total === 0 ? 0 : Math.round((packed / total) * 100);
+
+      return {
+        packed,
+        total,
+        percentage,
+      };
+    }
+
+    // Export to global scope (so Part 3 & 4 can use them)
+    window.generatePackingList = generatePackingList;
+    window.calculateProgress = calculateProgress;
+  </script>
+
+  <!-- ======================== PART 3 & 4 (& 5): DOM + EVENTS + OPTIONAL API ======================== -->
+  <script>
+    /*
+      This script block handles:
+      - DOM selection
+      - Building and rendering the checklist
+      - Updating the progress counter
+      - User events (button clicks, checkbox changes)
+      - Optional weather API integration
+    */
+
+    // 1. SELECT NECESSARY ELEMENTS (using getElementById / querySelector)
+
+    const destinationInput = document.getElementById("destination-input");
+    const weatherSelect = document.getElementById("weather-select");
+    const durationSlider = document.getElementById("duration-slider");
+    const durationDisplay = document.getElementById("duration-display");
+    const generateBtn = document.getElementById("generate-btn");
+    const getWeatherBtn = document.getElementById("get-weather-btn");
+    const resetBtn = document.getElementById("reset-btn");
+    const packingListContainer = document.getElementById("packing-list-container");
+    const progressCounter = document.getElementById("progress-counter");
+    const celebrationMessage = document.getElementById("celebration-message");
+    const weatherStatus = document.getElementById("weather-status");
+
+    // Global state representing the current packing list.
+    // This array is built by generatePackingList() and then mirrored in the UI.
+    let currentPackingList = [];
+
+    /**
+     * 2. displayPackingList(packingList)
+     * ----------------------------------
+     * - Input: an array of { item, category, packed }
+     * - Behavior:
+     *     - Clears previous content
+     *     - Groups items by category
+     *     - Builds HTML checkboxes for each item
+     *     - Assigns a data-index attribute so we can match checkboxes back to the array
+     */
+    function displayPackingList(packingList) {
+      // First, clear any previous content
+      clearPackingList();
+
+      // If list is empty, show an informational message and stop
+      if (!packingList || packingList.length === 0) {
+        packingListContainer.innerHTML =
+          '<p class="text-xs text-gray-400 italic">No items generated yet. Try adjusting your trip settings.</p>';
+        return;
+      }
+
+      // Group items by category for nicer display (object: {category: [items...]})
+      const grouped = {};
+      packingList.forEach((entry, index) => {
+        const category = entry.category || "Other";
+        if (!grouped[category]) {
+          grouped[category] = [];
+        }
+        // Save the index so we know which item this checkbox maps to later
+        grouped[category].push({ ...entry, index });
+      });
+
+      // We will build the HTML via string concatenation for simplicity
+      let html = "";
+
+      Object.keys(grouped).forEach((category) => {
+        html += `
+          <div class="border-b border-gray-100 pb-2 mb-2 last:border-b-0 last:pb-0 last:mb-0">
+            <h3 class="text-xs font-semibold text-gray-500 uppercase tracking-wide mb-1">
+              ${category}
+            </h3>
+        `;
+
+        grouped[category].forEach((entry) => {
+          const checkboxId = `item-checkbox-${entry.index}`;
+
+          html += `
+            <label
+              for="${checkboxId}"
+              class="flex items-center gap-2 text-sm text-gray-800 cursor-pointer select-none"
+            >
+              <input
+                id="${checkboxId}"
+                class="h-4 w-4 rounded border-gray-300 text-brandPrimary
+                       focus:ring-brandPrimary cursor-pointer"
+                type="checkbox"
+                data-index="${entry.index}"
+                data-item="${entry.item}"
+                ${entry.packed ? "checked" : ""}
+              />
+              <span>${entry.item}</span>
+            </label>
+          `;
+        });
+
+        html += `</div>`;
+      });
+
+      // Inject the generated HTML into the container
+      packingListContainer.innerHTML = html;
+    }
+
+    /**
+     * 3. updateProgress(packed, total)
+     * --------------------------------
+     * - Updates the progress counter text, e.g. "5/12 items packed"
+     */
+    function updateProgress(packed, total) {
+      progressCounter.textContent = `${packed}/${total} items packed`;
+    }
+
+    /**
+     * 4. clearPackingList()
+     * ---------------------
+     * - Clears the packing list display container and hides the celebration message.
+     */
+    function clearPackingList() {
+      packingListContainer.innerHTML = "";
+      celebrationMessage.classList.add("hidden");
+    }
+
+    // Helper: refresh progress counter based on currentPackingList
+    function refreshProgressFromState() {
+      const { packed, total } = calculateProgress(currentPackingList);
+      updateProgress(packed, total);
+
+      // Show or hide celebration message when all are packed
+      if (total > 0 && packed === total) {
+        celebrationMessage.classList.remove("hidden");
+      } else {
+        celebrationMessage.classList.add("hidden");
+      }
+    }
+
+    // ======================== PART 4: USER EVENTS ========================
+
+    // 0. Live update of duration label when slider changes
+    durationSlider.addEventListener("input", function () {
+      // `this.value` is a string; we simply show it next to the slider
+      durationDisplay.textContent = this.value;
+    });
+
+    // 1. "Generate Packing List" button click
+    generateBtn.addEventListener("click", function () {
+      const destination = destinationInput.value.trim();
+      const weather = weatherSelect.value; // "hot" | "cold" | "rainy" | "mixed"
+      const days = Number(durationSlider.value);
+
+      // Generate a fresh packing list (using Part 2 function)
+      currentPackingList = generatePackingList(weather, days);
+
+      // Display the checklist in the UI
+      displayPackingList(currentPackingList);
+
+      // Reset and update progress
+      refreshProgressFromState();
+
+      // Optional: show a small confirmation in the weatherStatus area
+      weatherStatus.textContent =
+        `Packing list generated for ${destination || "your trip"} (${days} day(s), ${weather} weather).`;
+    });
+
+    // 2. Each packing item checkbox change (using event delegation)
+    //    We attach one listener to the container, then check if the event target is a checkbox.
+    packingListContainer.addEventListener("change", function (event) {
+      const target = event.target;
+
+      // Make sure the event comes from an <input type="checkbox">
+      if (target && target.matches('input[type="checkbox"][data-index]')) {
+        const index = Number(target.getAttribute("data-index"));
+
+        // Update the packed status in our in-memory array
+        if (!Number.isNaN(index) && currentPackingList[index]) {
+          currentPackingList[index].packed = target.checked;
+        }
+
+        // Recalculate progress and update counter
+        refreshProgressFromState();
+      }
+    });
+
+    // 3. "Get Weather" button click (with optional API integration)
+    getWeatherBtn.addEventListener("click", async function () {
+      const city = destinationInput.value.trim();
+
+      if (!city) {
+        weatherStatus.textContent = "Please enter a destination city first.";
+        return;
+      }
+
+      // Show loading message
+      weatherStatus.textContent = `Fetching weather for ${city}...`;
+
+      try {
+        // Call our async function to get weather data (Part 5)
+        const weatherData = await getWeather(city);
+
+        if (!weatherData) {
+          weatherStatus.textContent = "Unable to fetch weather data. Please try again.";
+          return;
+        }
+
+        const { temp, condition } = weatherData;
+
+        // Determine uiCategory like "hot" | "cold" | "rainy" | "mixed"
+        const { category: uiWeatherCategory, icon } = determineWeatherCategory(temp, condition);
+
+        // Auto-select the weather dropdown based on detected category
+        weatherSelect.value = uiWeatherCategory;
+
+        // Update the status text with temperature, city, and icon
+        weatherStatus.textContent = `${temp}°C in ${city} (${condition}) ${icon}`;
+
+        // (Optional) Auto-generate a new packing list based on detected weather
+        const days = Number(durationSlider.value);
+        currentPackingList = generatePackingList(uiWeatherCategory, days);
+        displayPackingList(currentPackingList);
+        refreshProgressFromState();
+      } catch (error) {
+        // Handle errors such as network problems or invalid city
+        console.error(error);
+        weatherStatus.textContent =
+          "Error fetching weather information. Please check the city name or try again later.";
+      }
+    });
+
+    // 4. "Reset" button
+    resetBtn.addEventListener("click", function () {
+      // Clear form inputs
+      destinationInput.value = "";
+      weatherSelect.value = "hot";
+      durationSlider.value = 5;
+      durationDisplay.textContent = "5";
+
+      // Clear state and UI list
+      currentPackingList = [];
+      clearPackingList();
+      updateProgress(0, 0);
+      weatherStatus.textContent = "";
+    });
+
+    // ======================== PART 5 (OPTIONAL): WEATHER API ========================
+
+    // Replace this with your actual OpenWeatherMap API key.
+    // For security, in a real project you would NOT hard-code keys in client-side JavaScript.
+    const OPENWEATHER_API_KEY = "YOUR_API_KEY_HERE";
+
+    /**
+     * async getWeather(city)
+     * ----------------------
+     * - Uses the Fetch API to call OpenWeatherMap.
+     * - Returns a simplified object: { temp: number, condition: string }.
+     *   temp: main.temp (°C)
+     *   condition: weather[0].main (e.g. "Clear", "Rain", "Snow")
+     */
+    async function getWeather(city) {
+      // Build the URL with query string parameters
+      const url =
+        "https://api.openweathermap.org/data/2.5/weather" +
+        `?q=${encodeURIComponent(city)}` +
+        `&units=metric` +
+        `&appid=${OPENWEATHER_API_KEY}`;
+
+      const response = await fetch(url);
+
+      if (!response.ok) {
+        // If the city is not found or other HTTP error, throw an error
+        throw new Error(`HTTP error ${response.status}`);
+      }
+
+      const data = await response.json();
+
+      // Extract temperature and condition from API response
+      const temp = data.main?.temp;
+      const condition = data.weather?.[0]?.main || "Unknown";
+
+      return { temp, condition };
+    }
+
+    /**
+     * determineWeatherCategory(temp, condition)
+     * ----------------------------------------
+     * - Input:
+     *     temp: number (°C)
+     *     condition: string (e.g. "Clear", "Rain", "Snow", etc.)
+     * - Output:
+     *     { category: "hot" | "cold" | "rainy" | "mixed", icon: string }
+     * 
+     * Logic:
+     *  - temp >= 25°C → "hot"
+     *  - temp < 10°C → "cold"
+     *  - condition includes "Rain" → "rainy"
+     *  - else → "mixed"
+     */
+    function determineWeatherCategory(temp, condition) {
+      const upperCondition = (condition || "").toUpperCase();
+
+      let category = "mixed";
+      let icon = "☁️";
+
+      if (upperCondition.includes("RAIN")) {
+        category = "rainy";
+        icon = "🌧️";
+      } else if (temp >= 25) {
+        category = "hot";
+        icon = "☀️";
+      } else if (temp < 10) {
+        category = "cold";
+        icon = "❄️";
+      } else {
+        category = "mixed";
+        icon = "☁️";
+      }
+
+      return { category, icon };
+    }
+  </script>
+</body>
+</html>
+

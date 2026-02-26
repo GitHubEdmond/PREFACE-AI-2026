@@ -1,0 +1,362 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <title>Laser Breakout</title>
+  <style>
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body {
+      background: radial-gradient(circle at top, #1e293b, #020617);
+      color: #e5e7eb;
+      font-family: system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      min-height: 100vh;
+    }
+    .wrapper {
+      text-align: center;
+    }
+    h1 {
+      font-size: 1.4rem;
+      margin-bottom: 6px;
+      letter-spacing: 0.12em;
+      text-transform: uppercase;
+    }
+    p {
+      font-size: 0.8rem;
+      color: #9ca3af;
+      margin-bottom: 4px;
+    }
+    .hint {
+      color: #38bdf8;
+      margin-bottom: 10px;
+    }
+    canvas {
+      background: radial-gradient(circle at top, #020617, #020617 60%, #000 100%);
+      border-radius: 16px;
+      border: 1px solid rgba(56, 189, 248, 0.4);
+      box-shadow:
+        0 0 40px rgba(56, 189, 248, 0.35),
+        0 20px 40px rgba(15, 23, 42, 0.9);
+      display: block;
+      margin: 10px auto 0;
+    }
+  </style>
+</head>
+<body>
+  <div class="wrapper">
+    <h1>LASER BREAKOUT</h1>
+    <p>Move with LEFT / RIGHT arrow keys.</p>
+    <p class="hint">Press K to fire a laser straight up.</p>
+    <p>Break all the bricks without letting the ball fall.</p>
+    <canvas id="gameCanvas" width="480" height="320"></canvas>
+  </div>
+
+  <script>
+    const canvas = document.getElementById("gameCanvas");
+    const ctx = canvas.getContext("2d");
+
+    // Ball
+    let x = canvas.width / 2;
+    let y = canvas.height - 30;
+    let dx = 2;
+    let dy = -2;
+    const ballRadius = 8;
+
+    // Paddle
+    const paddleHeight = 10;
+    const paddleWidth = 75;
+    let paddleX = (canvas.width - paddleWidth) / 2;
+    let rightPressed = false;
+    let leftPressed = false;
+
+    // Bricks
+    const brickRowCount = 4;
+    const brickColumnCount = 7;
+    const brickWidth = 50;
+    const brickHeight = 16;
+    const brickPadding = 8;
+    const brickOffsetTop = 40;
+    const brickOffsetLeft = 20;
+
+    let bricks = [];
+    for (let c = 0; c < brickColumnCount; c++) {
+      bricks[c] = [];
+      for (let r = 0; r < brickRowCount; r++) {
+        bricks[c][r] = { x: 0, y: 0, status: 1 };
+      }
+    }
+
+    let score = 0;
+    let lives = 3;
+
+    // Persistent score in localStorage
+    const SCORE_KEY = "laserBreakoutScore";
+
+    function loadScore() {
+      const saved = localStorage.getItem(SCORE_KEY);
+      score = saved ? parseInt(saved, 10) || 0 : 0;
+    }
+
+    function saveScore() {
+      localStorage.setItem(SCORE_KEY, String(score));
+    }
+
+    // Lasers fired from paddle
+    const laserSpeed = 6;
+    let lasers = [];
+
+    document.addEventListener("keydown", keyDownHandler, false);
+    document.addEventListener("keyup", keyUpHandler, false);
+
+    function keyDownHandler(e) {
+      if (e.key === "Right" || e.key === "ArrowRight") {
+        rightPressed = true;
+      } else if (e.key === "Left" || e.key === "ArrowLeft") {
+        leftPressed = true;
+      } else if (e.key === "k" || e.key === "K") {
+        fireLaser();
+      }
+    }
+    function keyUpHandler(e) {
+      if (e.key === "Right" || e.key === "ArrowRight") {
+        rightPressed = false;
+      } else if (e.key === "Left" || e.key === "ArrowLeft") {
+        leftPressed = false;
+      }
+    }
+
+    function collisionDetection() {
+      for (let c = 0; c < brickColumnCount; c++) {
+        for (let r = 0; r < brickRowCount; r++) {
+          const b = bricks[c][r];
+          if (b.status === 1) {
+            if (
+              x > b.x &&
+              x < b.x + brickWidth &&
+              y > b.y &&
+              y < b.y + brickHeight
+            ) {
+              dy = -dy;
+              b.status = 0;
+              score++;
+              saveScore();
+              if (score === brickRowCount * brickColumnCount) {
+                alert("YOU WIN!");
+                document.location.reload();
+              }
+            }
+          }
+        }
+      }
+    }
+
+    function fireLaser() {
+      const paddleTop = canvas.height - paddleHeight - 10;
+      const centerX = paddleX + paddleWidth / 2;
+      lasers.push({ x: centerX, y: paddleTop, active: true });
+    }
+
+    function updateLasers() {
+      lasers.forEach((laser) => {
+        if (!laser.active) return;
+        laser.y -= laserSpeed;
+        if (laser.y < 0) {
+          laser.active = false;
+        } else {
+          // Check collision with bricks
+          for (let c = 0; c < brickColumnCount; c++) {
+            for (let r = 0; r < brickRowCount; r++) {
+              const b = bricks[c][r];
+              if (b.status === 1) {
+                if (
+                  laser.x > b.x &&
+                  laser.x < b.x + brickWidth &&
+                  laser.y > b.y &&
+                  laser.y < b.y + brickHeight
+                ) {
+                  b.status = 0;
+                  laser.active = false;
+                  score++;
+                  saveScore();
+                  if (score === brickRowCount * brickColumnCount) {
+                    alert("YOU WIN!");
+                    document.location.reload();
+                  }
+                  return;
+                }
+              }
+            }
+          }
+        }
+      });
+      // Remove inactive lasers
+      lasers = lasers.filter((l) => l.active);
+    }
+
+    function drawLasers() {
+      lasers.forEach((laser) => {
+        if (!laser.active) return;
+        const grad = ctx.createLinearGradient(laser.x, laser.y, laser.x, laser.y + 12);
+        grad.addColorStop(0, "#38bdf8");
+        grad.addColorStop(1, "#22c55e");
+        ctx.beginPath();
+        ctx.moveTo(laser.x, laser.y);
+        ctx.lineTo(laser.x, laser.y + 12);
+        ctx.strokeStyle = grad;
+        ctx.lineWidth = 3;
+        ctx.stroke();
+        ctx.closePath();
+      });
+    }
+
+    function drawBall() {
+      ctx.beginPath();
+      ctx.arc(x, y, ballRadius, 0, Math.PI * 2);
+      const grad = ctx.createRadialGradient(
+        x - 2, y - 2, 2,
+        x, y, ballRadius
+      );
+      grad.addColorStop(0, "#f97316");
+      grad.addColorStop(1, "#22c55e");
+      ctx.fillStyle = grad;
+      ctx.fill();
+      ctx.closePath();
+    }
+
+    function drawPaddle() {
+      const paddleTop = canvas.height - paddleHeight - 10;
+      const grad = ctx.createLinearGradient(
+        paddleX, paddleTop,
+        paddleX + paddleWidth, paddleTop + paddleHeight
+      );
+      grad.addColorStop(0, "#22c55e");
+      grad.addColorStop(1, "#38bdf8");
+
+      ctx.beginPath();
+      ctx.roundRect(paddleX, paddleTop, paddleWidth, paddleHeight, 6);
+      ctx.fillStyle = grad;
+      ctx.fill();
+      ctx.closePath();
+
+      // Small glow on top of paddle
+      ctx.beginPath();
+      ctx.roundRect(paddleX + 4, paddleTop - 3, paddleWidth - 8, 3, 3);
+      ctx.fillStyle = "rgba(56, 189, 248, 0.7)";
+      ctx.fill();
+      ctx.closePath();
+    }
+
+    function drawBricks() {
+      for (let c = 0; c < brickColumnCount; c++) {
+        for (let r = 0; r < brickRowCount; r++) {
+          if (bricks[c][r].status === 1) {
+            const brickX =
+              c * (brickWidth + brickPadding) + brickOffsetLeft;
+            const brickY =
+              r * (brickHeight + brickPadding) + brickOffsetTop;
+            bricks[c][r].x = brickX;
+            bricks[c][r].y = brickY;
+            const grad = ctx.createLinearGradient(
+              brickX, brickY,
+              brickX + brickWidth, brickY + brickHeight
+            );
+            grad.addColorStop(0, "#6366f1");
+            grad.addColorStop(1, "#ec4899");
+            ctx.beginPath();
+            ctx.roundRect(brickX, brickY, brickWidth, brickHeight, 5);
+            ctx.fillStyle = grad;
+            ctx.fill();
+            ctx.closePath();
+          }
+        }
+      }
+    }
+
+    function drawScore() {
+      ctx.font = "14px system-ui";
+      ctx.fillStyle = "#e5e7eb";
+      ctx.fillText("Score: " + score, 8, 20);
+    }
+
+    function drawLives() {
+      ctx.font = "14px system-ui";
+      ctx.fillStyle = "#f97373";
+      ctx.fillText("Lives: " + lives, canvas.width - 70, 20);
+    }
+
+    function draw() {
+      ctx.clearRect(0, 0, canvas.width, canvas.height);
+      drawBricks();
+      drawBall();
+      drawPaddle();
+      updateLasers();
+      drawLasers();
+      drawScore();
+      drawLives();
+      collisionDetection();
+
+      // Bounce off side walls
+      if (x + dx > canvas.width - ballRadius || x + dx < ballRadius) {
+        dx = -dx;
+      }
+      // Bounce off top
+      if (y + dy < ballRadius) {
+        dy = -dy;
+      }
+      // Bottom collision
+      else if (y + dy > canvas.height - ballRadius - 10) {
+        const paddleTop = canvas.height - paddleHeight - 10;
+        if (y + ballRadius >= paddleTop && x > paddleX && x < paddleX + paddleWidth) {
+          dy = -dy;
+        } else if (y + dy > canvas.height - ballRadius) {
+          lives--;
+          if (!lives) {
+            alert("GAME OVER");
+            document.location.reload();
+          } else {
+            x = canvas.width / 2;
+            y = canvas.height - 30;
+            dx = 2;
+            dy = -2;
+            paddleX = (canvas.width - paddleWidth) / 2;
+          }
+        }
+      }
+
+      // Paddle move
+      if (rightPressed && paddleX < canvas.width - paddleWidth) {
+        paddleX += 5;
+      } else if (leftPressed && paddleX > 0) {
+        paddleX -= 5;
+      }
+
+      x += dx;
+      y += dy;
+      requestAnimationFrame(draw);
+    }
+
+    // Initialize score from storage before starting loop
+    loadScore();
+
+    // Polyfill for roundRect if needed (older browsers)
+    if (!CanvasRenderingContext2D.prototype.roundRect) {
+      CanvasRenderingContext2D.prototype.roundRect = function (x, y, w, h, r) {
+        if (w < 2 * r) r = w / 2;
+        if (h < 2 * r) r = h / 2;
+        this.beginPath();
+        this.moveTo(x + r, y);
+        this.arcTo(x + w, y, x + w, y + h, r);
+        this.arcTo(x + w, y + h, x, y + h, r);
+        this.arcTo(x, y + h, x, y, r);
+        this.arcTo(x, y, x + w, y, r);
+        this.closePath();
+        return this;
+      };
+    }
+
+    draw();
+  </script>
+</body>
+</html>
